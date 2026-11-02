@@ -1,4 +1,3 @@
-
 <!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Моя карта — редактор</title>
@@ -18,7 +17,7 @@
 <div class="label">Мои объекты · <span id="count">0</span></div><div id="items"><div class="empty">Здесь появятся точки и маршруты.</div></div>
 <div class="label">Данные</div><button class="btn" id="export">↓ Скачать GeoJSON</button><button class="btn alt" id="fit">Показать все объекты</button><button class="btn alt" id="clear">Очистить карту</button>
 <p class="note">Все правки автоматически хранятся в этом браузере. Для переноса или публикации скачайте GeoJSON. Встроенные инструменты редактирования линий и удаления находятся на самой карте.</p></aside>
-<div class="maparea"><div id="map"></div><div class="top"><div class="float">🌍 Редактор маршрутов</div><div class="float">Подложка: <select id="basemap"><option value="osm">Улицы</option><option value="topo">Рельеф</option></select></div></div><div class="status" id="status">Выберите инструмент слева, чтобы начать работу.</div></div></div>
+<div class="maparea"><div id="map"></div><div class="top"><div class="float">🌍 Редактор маршрутов</div><div class="float">Подложка: <select id="basemap"><option value="osm">Улицы</option><option value="topo">Рельеф</option><option value="none">Без подложки</option></select></div></div><div class="status" id="status">Выберите инструмент слева, чтобы начать работу.</div></div></div>
 <div class="overlay hidden" id="overlay"><div class="dialog"><h2 id="heading">Новый объект</h2><form id="form"><label>Название</label><input id="name" required maxlength="160"><label>Описание</label><input id="desc" maxlength="500" placeholder="Необязательно"><label>Слой</label><select id="category"><option value="places">📍 Места</option><option value="roads">🛣️ Дороги</option><option value="trips">🚗 Путешествия</option><option value="tracks">🧭 GPS-треки</option></select><div class="actions"><button class="btn alt" type="button" id="cancel">Отмена</button><button class="btn" type="submit">Сохранить</button></div></form></div></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 <script>
@@ -64,16 +63,10 @@ async function loadCapitals() {
     if (!response.ok) throw Error('файл не найден (' + response.status + ')');
     const data = await response.json();
     
-    // Создаем пустой слой для столиц
     const layer = L.layerGroup();
-    
-    // Перебираем массив объектов
     for (const item of data) {
-      // Проверяем, есть ли координаты в нужном месте
       if (item.location && item.location.lat !== undefined && item.location.lng !== undefined) {
         const latlng = [item.location.lat, item.location.lng];
-        
-        // Создаем маркер
         const marker = L.marker(latlng, {
           icon: L.divIcon({
             className: 'capital-marker',
@@ -82,10 +75,7 @@ async function loadCapitals() {
             iconAnchor: [12, 12]
           })
         });
-        
-        // Добавляем всплывающее окно
         marker.bindPopup('<strong>' + escapeHTML(item.capital || 'Столица') + '</strong><br>' + escapeHTML(item.country || ''));
-        
         layer.addLayer(marker);
       }
     }
@@ -151,7 +141,6 @@ function renderLayers(){
    row.append(check,dot,name,count);holder.append(row)
  }
  
- // Слой водоемов
  const row=document.createElement('label');row.className='layer-row';
  const check=document.createElement('input');check.type='checkbox';check.checked=waterVisible;
  check.onchange=()=>{waterVisible=check.checked;localStorage.setItem('my-atlas-water-visible',String(waterVisible));if(waterVisible)waterLayer.addTo(map);else map.removeLayer(waterLayer)};
@@ -160,7 +149,6 @@ function renderLayers(){
  const count=document.createElement('small');count.textContent=waterCount;
  row.append(check,dot,name,count);holder.append(row);
 
- // Слой столиц
  const capRow=document.createElement('label');capRow.className='layer-row';
  const capCheck=document.createElement('input');capCheck.type='checkbox';capCheck.checked=capitalsVisible;
  capCheck.onchange=()=>{capitalsVisible=capCheck.checked;if(capitalsVisible)capitalsLayer.addTo(map);else map.removeLayer(capitalsLayer)};
@@ -169,7 +157,6 @@ function renderLayers(){
  const capCount=document.createElement('small');capCount.textContent=capitalsCount;
  capRow.append(capCheck,capDot,capName,capCount);holder.append(capRow);
 
- // Слой границ государств
  if (bordersCount > 0) {
    const borderRow=document.createElement('label');borderRow.className='layer-row';
    const borderCheck=document.createElement('input');borderCheck.type='checkbox';borderCheck.checked=bordersVisible;
@@ -191,7 +178,10 @@ function hideDialog(){pending=null;editId=null;$('overlay').classList.add('hidde
 $('form').onsubmit=e=>{e.preventDefault();if(editId){const r=records.get(editId);r.name=$('name').value.trim();r.description=$('desc').value.trim();r.category=$('category').value;styleRecord(r);applyVisibility(r);popup(r)}else if(pending)add(pending,{name:$('name').value.trim(),description:$('desc').value.trim(),category:$('category').value});save();hideDialog()};$('cancel').onclick=hideDialog;
 function draw(kind){drawer?.disable();drawer=kind==='point'?new L.Draw.Marker(map,control.options.draw.marker):new L.Draw.Polyline(map,control.options.draw.polyline);drawer.enable();$('status').textContent=kind==='point'?'Нажмите на нужное место на карте.':'Отмечайте вершины линии, двойной щелчок — завершение.';$('panel').classList.remove('open')}
 $('point').onclick=()=>draw('point');$('line').onclick=()=>draw('route');map.on(L.Draw.Event.CREATED,e=>{drawer=null;showDialog(e.layer)});map.on(L.Draw.Event.EDITED,save);map.on(L.Draw.Event.DELETED,e=>{e.layers.eachLayer(layer=>{for(const [id,r]of records)if(r.layer===layer)records.delete(id)});save()});
-$('basemap').onchange=e=>{Object.values(tile).forEach(t=>map.removeLayer(t));tile[e.target.value].addTo(map)};
+$('basemap').onchange=e=>{
+  Object.values(tile).forEach(t=>map.removeLayer(t));
+  if(tile[e.target.value]) tile[e.target.value].addTo(map);
+};
 function load(data){let count=0;L.geoJSON(data,{pointToLayer:(f,ll)=>L.marker(ll),onEachFeature:(f,l)=>{if(!['Point','LineString','MultiLineString'].includes(f.geometry?.type))return;if(l instanceof L.LayerGroup){l.eachLayer(x=>{add(x,f.properties||{});count++})}else{add(l,f.properties||{});count++}}});return count}
 function gpx(src,filename){const doc=new DOMParser().parseFromString(src,'application/xml');if(doc.querySelector('parsererror'))throw Error('Неверный GPX');const find=(root,tag)=>Array.from(root.getElementsByTagNameNS('*',tag)),features=[];for(const w of find(doc,'wpt')){const c=[Number(w.getAttribute('lon')),Number(w.getAttribute('lat'))];if(c.every(Number.isFinite))features.push({type:'Feature',geometry:{type:'Point',coordinates:c},properties:{name:find(w,'name')[0]?.textContent||'Точка GPX',category:'tracks'}})}for(const seg of [...find(doc,'trkseg'),...find(doc,'rte')]){const coords=find(seg,seg.localName==='rte'?'rtept':'trkpt').map(p=>[Number(p.getAttribute('lon')),Number(p.getAttribute('lat'))]).filter(c=>c.every(Number.isFinite));if(coords.length>1)features.push({type:'Feature',geometry:{type:'LineString',coordinates:coords},properties:{name:filename.replace(/\.gpx$/i,''),kind:'route',category:'tracks'}})}return {type:'FeatureCollection',features}}
 $('import').onclick=()=>$('files').click();$('files').onchange=async e=>{let total=0;for(const f of e.target.files){try{const text=await f.text();total+=load(f.name.toLowerCase().endsWith('.gpx')?gpx(text,f.name):JSON.parse(text))}catch(err){alert('Ошибка '+f.name+': '+err.message)}}save();if(total)fit();$('status').textContent='Загружено объектов: '+total;e.target.value=''};
