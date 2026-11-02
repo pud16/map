@@ -28,9 +28,12 @@ const control=new L.Control.Draw({draw:{marker:true,polyline:{shapeOptions:{colo
 let pending=null,editId=null,drawer=null,seq=0;
 const categories={places:{name:'Места',color:'#168c68'},roads:{name:'Дороги',color:'#d8893b'},trips:{name:'Путешествия',color:'#537bd3'},tracks:{name:'GPS-треки',color:'#ad66c9'}};
 let visible={places:true,roads:true,trips:true,tracks:true};
+
+// --- СЛОИ: ВОДОЁМЫ ---
 const waterLayer=L.featureGroup().addTo(map);let waterVisible=true,waterCount=0,waterBounds=null;
 try{waterVisible=localStorage.getItem('my-atlas-water-visible')!=='false'}catch(e){}
 if(!waterVisible)map.removeLayer(waterLayer);
+
 async function loadLakes(){
  try{
   const manifestResponse=await fetch('./data/lakes/index.json',{cache:'no-cache'});
@@ -49,13 +52,82 @@ async function loadLakes(){
   renderLayers();
  }catch(error){$('lakeStatus').textContent='Не удалось загрузить водоёмы: '+error.message}
 }
+
+// --- СЛОИ: СТОЛИЦЫ ---
+const capitalsLayer = L.featureGroup().addTo(map);
+let capitalsVisible = true, capitalsCount = 0;
+
+async function loadCapitals() {
+  try {
+    const response = await fetch('./data/capitals.json', { cache: 'no-cache' });
+    if (!response.ok) throw Error('файл не найден (' + response.status + ')');
+    const data = await response.json();
+    
+    const layer = L.geoJSON(data, {
+      pointToLayer: (feature, latlng) => {
+        return L.marker(latlng, {
+          icon: L.divIcon({
+            className: 'capital-marker',
+            html: '<div style="font-size: 20px; text-shadow: 0 0 3px white, 0 0 3px white;">🏛️</div>',
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+          })
+        });
+      },
+      onEachFeature: (feature, l) => {
+        const name = feature.properties.name || 'Столица';
+        const desc = feature.properties.description || '';
+        l.bindPopup('<strong>' + escapeHTML(name) + '</strong>' + (desc ? '<br>' + escapeHTML(desc) : ''));
+      }
+    });
+    
+    if (layer.getLayers().length) {
+      capitalsLayer.addLayer(layer);
+      capitalsCount += layer.getLayers().length;
+    }
+    renderLayers();
+  } catch (error) {
+    console.warn('Не удалось загрузить столицы:', error.message);
+  }
+}
+
 function escapeHTML(value){return String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 try{visible={...visible,...JSON.parse(localStorage.getItem('my-atlas-layers-v1')||'{}')}}catch(e){}
 function normalizeCategory(props,kind){return categories[props.category]?props.category:(props.source==='gpx'?'tracks':kind==='point'?'places':'roads')}
 function applyVisibility(r){if(visible[r.category])group.addLayer(r.layer);else group.removeLayer(r.layer)}
 function styleRecord(r){if(r.kind==='route'&&r.layer.setStyle)r.layer.setStyle({color:categories[r.category].color,weight:4,opacity:.9})}
-function renderLayers(){const holder=$('layers');holder.replaceChildren();for(const [key,cat] of Object.entries(categories)){const row=document.createElement('label');row.className='layer-row';const check=document.createElement('input');check.type='checkbox';check.checked=visible[key];check.onchange=()=>{visible[key]=check.checked;localStorage.setItem('my-atlas-layers-v1',JSON.stringify(visible));for(const r of records.values())if(r.category===key)applyVisibility(r);render()};const dot=document.createElement('i');dot.className='layer-dot';dot.style.background=cat.color;const name=document.createElement('b');name.textContent=cat.name;const count=document.createElement('small');count.textContent=[...records.values()].filter(r=>r.category===key).length;row.append(check,dot,name,count);holder.append(row)}
- const row=document.createElement('label');row.className='layer-row';const check=document.createElement('input');check.type='checkbox';check.checked=waterVisible;check.onchange=()=>{waterVisible=check.checked;localStorage.setItem('my-atlas-water-visible',String(waterVisible));if(waterVisible)waterLayer.addTo(map);else map.removeLayer(waterLayer)};const dot=document.createElement('i');dot.className='layer-dot';dot.style.background='#69c6ec';const name=document.createElement('b');name.textContent='Водоёмы';const count=document.createElement('small');count.textContent=waterCount;row.append(check,dot,name,count);holder.append(row)}
+
+function renderLayers(){
+ const holder=$('layers');holder.replaceChildren();
+ for(const [key,cat] of Object.entries(categories)){
+   const row=document.createElement('label');row.className='layer-row';
+   const check=document.createElement('input');check.type='checkbox';check.checked=visible[key];
+   check.onchange=()=>{visible[key]=check.checked;localStorage.setItem('my-atlas-layers-v1',JSON.stringify(visible));for(const r of records.values())if(r.category===key)applyVisibility(r);render()};
+   const dot=document.createElement('i');dot.className='layer-dot';dot.style.background=cat.color;
+   const name=document.createElement('b');name.textContent=cat.name;
+   const count=document.createElement('small');count.textContent=[...records.values()].filter(r=>r.category===key).length;
+   row.append(check,dot,name,count);holder.append(row)
+ }
+ 
+ // Слой водоемов
+ const row=document.createElement('label');row.className='layer-row';
+ const check=document.createElement('input');check.type='checkbox';check.checked=waterVisible;
+ check.onchange=()=>{waterVisible=check.checked;localStorage.setItem('my-atlas-water-visible',String(waterVisible));if(waterVisible)waterLayer.addTo(map);else map.removeLayer(waterLayer)};
+ const dot=document.createElement('i');dot.className='layer-dot';dot.style.background='#69c6ec';
+ const name=document.createElement('b');name.textContent='Водоёмы';
+ const count=document.createElement('small');count.textContent=waterCount;
+ row.append(check,dot,name,count);holder.append(row);
+
+ // Слой столиц
+ const capRow=document.createElement('label');capRow.className='layer-row';
+ const capCheck=document.createElement('input');capCheck.type='checkbox';capCheck.checked=capitalsVisible;
+ capCheck.onchange=()=>{capitalsVisible=capCheck.checked;if(capitalsVisible)capitalsLayer.addTo(map);else map.removeLayer(capitalsLayer)};
+ const capDot=document.createElement('i');capDot.className='layer-dot';capDot.style.background='#d9534f';
+ const capName=document.createElement('b');capName.textContent='Столицы';
+ const capCount=document.createElement('small');capCount.textContent=capitalsCount;
+ capRow.append(capCheck,capDot,capName,capCount);holder.append(capRow);
+}
+
 function collection(){return {type:'FeatureCollection',features:[...records.values()].map(r=>{const f=r.layer.toGeoJSON();f.properties={id:r.id,name:r.name,description:r.description,kind:r.kind,category:r.category};return f})}}
 function save(){try{localStorage.setItem('my-atlas-v1',JSON.stringify(collection()))}catch(e){console.warn(e)}render()}
 function render(){renderLayers();const list=$('items');list.replaceChildren();$('count').textContent=records.size;if(!records.size){list.innerHTML='<div class="empty">Здесь появятся точки и маршруты.</div>';return}for(const r of records.values()){const row=document.createElement('div');row.className='item';const icon=document.createElement('b');icon.textContent=r.kind==='point'?'📍':'〰️';const title=document.createElement('span');title.textContent=r.name;title.style.opacity=visible[r.category]?'1':'.5';title.onclick=()=>{if(!visible[r.category]){visible[r.category]=true;localStorage.setItem('my-atlas-layers-v1',JSON.stringify(visible));applyVisibility(r);render()}r.layer.getLatLng?map.setView(r.layer.getLatLng(),13):map.fitBounds(r.layer.getBounds(),{maxZoom:14});r.layer.openPopup();$('panel').classList.remove('open')};const edit=document.createElement('button');edit.textContent='✎';edit.title='Изменить';edit.onclick=()=>showDialog(null,r.id);const del=document.createElement('button');del.textContent='×';del.title='Удалить';del.onclick=()=>{if(confirm('Удалить '+r.name+'?')){group.removeLayer(r.layer);records.delete(r.id);save()}};row.append(icon,title,edit,del);list.append(row)}}
@@ -70,13 +142,13 @@ $('basemap').onchange=e=>{Object.values(tile).forEach(t=>map.removeLayer(t));til
 function load(data){let count=0;L.geoJSON(data,{pointToLayer:(f,ll)=>L.marker(ll),onEachFeature:(f,l)=>{if(!['Point','LineString','MultiLineString'].includes(f.geometry?.type))return;if(l instanceof L.LayerGroup){l.eachLayer(x=>{add(x,f.properties||{});count++})}else{add(l,f.properties||{});count++}}});return count}
 function gpx(src,filename){const doc=new DOMParser().parseFromString(src,'application/xml');if(doc.querySelector('parsererror'))throw Error('Неверный GPX');const find=(root,tag)=>Array.from(root.getElementsByTagNameNS('*',tag)),features=[];for(const w of find(doc,'wpt')){const c=[Number(w.getAttribute('lon')),Number(w.getAttribute('lat'))];if(c.every(Number.isFinite))features.push({type:'Feature',geometry:{type:'Point',coordinates:c},properties:{name:find(w,'name')[0]?.textContent||'Точка GPX',category:'tracks'}})}for(const seg of [...find(doc,'trkseg'),...find(doc,'rte')]){const coords=find(seg,seg.localName==='rte'?'rtept':'trkpt').map(p=>[Number(p.getAttribute('lon')),Number(p.getAttribute('lat'))]).filter(c=>c.every(Number.isFinite));if(coords.length>1)features.push({type:'Feature',geometry:{type:'LineString',coordinates:coords},properties:{name:filename.replace(/\.gpx$/i,''),kind:'route',category:'tracks'}})}return {type:'FeatureCollection',features}}
 $('import').onclick=()=>$('files').click();$('files').onchange=async e=>{let total=0;for(const f of e.target.files){try{const text=await f.text();total+=load(f.name.toLowerCase().endsWith('.gpx')?gpx(text,f.name):JSON.parse(text))}catch(err){alert('Ошибка '+f.name+': '+err.message)}}save();if(total)fit();$('status').textContent='Загружено объектов: '+total;e.target.value=''};
-function fit(){const all=L.featureGroup([...records.values()].map(r=>r.layer));if(waterCount)all.addLayer(waterLayer);if(records.size||waterCount)map.fitBounds(all.getBounds().pad(.15),{maxZoom:14});else $('status').textContent='Объектов пока нет'}$('fit').onclick=fit;
+function fit(){const all=L.featureGroup([...records.values()].map(r=>r.layer));if(waterCount)all.addLayer(waterLayer);if(capitalsCount)all.addLayer(capitalsLayer);if(records.size||waterCount||capitalsCount)map.fitBounds(all.getBounds().pad(.15),{maxZoom:14});else $('status').textContent='Объектов пока нет'}$('fit').onclick=fit;
 $('export').onclick=()=>{const blob=new Blob([JSON.stringify(collection(),null,2)],{type:'application/geo+json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='my-map.geojson';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
 $('clear').onclick=()=>{if(records.size&&confirm('Удалить все объекты? Сначала рекомендуем скачать GeoJSON.')){records.clear();group.clearLayers();save()}};
 $('menu').onclick=()=>$('panel').classList.toggle('open');
-try{const stored=localStorage.getItem('my-atlas-v1');if(stored)load(JSON.parse(stored));else fetch('./data/map.geojson').then(r=>r.ok?r.json():null).then(data=>{if(data&&!records.size){load(data);save();fit()}}).catch(()=>{});}catch(e){console.warn(e)}render();loadLakes();
+try{const stored=localStorage.getItem('my-atlas-v1');if(stored)load(JSON.parse(stored));else fetch('./data/map.geojson').then(r=>r.ok?r.json():null).then(data=>{if(data&&!records.size){load(data);save();fit()}}).catch(()=>{});}catch(e){console.warn(e)};
+render();loadLakes();loadCapitals();
 })();
 </script></body></html>
-
 
 
