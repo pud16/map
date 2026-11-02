@@ -63,7 +63,19 @@ async function loadCapitals() {
     if (!response.ok) throw Error('файл не найден (' + response.status + ')');
     const data = await response.json();
     
-    const layer = L.geoJSON(data, {
+    // Поддерживаем и стандартный GeoJSON, и ваш формат с lat/lng
+    const isGeoJSON = data.type === 'FeatureCollection' && data.features;
+    const features = isGeoJSON ? data.features : data;
+    
+    const layer = L.geoJSON(features, {
+      coordsToLatLng: function (coords) {
+        // Если это ваш формат (объект с lat/lng)
+        if (coords && typeof coords === 'object' && coords.lat !== undefined && coords.lng !== undefined) {
+          return new L.LatLng(coords.lat, coords.lng);
+        }
+        // Если это стандартный GeoJSON
+        return new L.LatLng(coords[1], coords[0]);
+      },
       pointToLayer: (feature, latlng) => {
         return L.marker(latlng, {
           icon: L.divIcon({
@@ -75,9 +87,13 @@ async function loadCapitals() {
         });
       },
       onEachFeature: (feature, l) => {
-        const name = feature.properties.name || 'Столица';
-        const desc = feature.properties.description || '';
-        l.bindPopup('<strong>' + escapeHTML(name) + '</strong>' + (desc ? '<br>' + escapeHTML(desc) : ''));
+        if (feature.capital) {
+          l.bindPopup('<strong>' + escapeHTML(feature.capital) + '</strong><br>' + escapeHTML(feature.country || ''));
+        } else {
+          const name = feature.properties?.name || 'Столица';
+          const desc = feature.properties?.description || '';
+          l.bindPopup('<strong>' + escapeHTML(name) + '</strong>' + (desc ? '<br>' + escapeHTML(desc) : ''));
+        }
       }
     });
     
@@ -150,5 +166,3 @@ try{const stored=localStorage.getItem('my-atlas-v1');if(stored)load(JSON.parse(s
 render();loadLakes();loadCapitals();
 })();
 </script></body></html>
-
-
