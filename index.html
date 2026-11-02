@@ -1,3 +1,4 @@
+
 <!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Моя карта — редактор</title>
@@ -63,21 +64,17 @@ async function loadCapitals() {
     if (!response.ok) throw Error('файл не найден (' + response.status + ')');
     const data = await response.json();
     
-    // Поддерживаем и стандартный GeoJSON, и ваш формат с lat/lng
-    const isGeoJSON = data.type === 'FeatureCollection' && data.features;
-    const features = isGeoJSON ? data.features : data;
+    // Создаем пустой слой для столиц
+    const layer = L.layerGroup();
     
-    const layer = L.geoJSON(features, {
-      coordsToLatLng: function (coords) {
-        // Если это ваш формат (объект с lat/lng)
-        if (coords && typeof coords === 'object' && coords.lat !== undefined && coords.lng !== undefined) {
-          return new L.LatLng(coords.lat, coords.lng);
-        }
-        // Если это стандартный GeoJSON
-        return new L.LatLng(coords[1], coords[0]);
-      },
-      pointToLayer: (feature, latlng) => {
-        return L.marker(latlng, {
+    // Перебираем массив объектов
+    for (const item of data) {
+      // Проверяем, есть ли координаты в нужном месте
+      if (item.location && item.location.lat !== undefined && item.location.lng !== undefined) {
+        const latlng = [item.location.lat, item.location.lng];
+        
+        // Создаем маркер
+        const marker = L.marker(latlng, {
           icon: L.divIcon({
             className: 'capital-marker',
             html: '<div style="font-size: 20px; text-shadow: 0 0 3px white, 0 0 3px white;">🏛️</div>',
@@ -85,17 +82,13 @@ async function loadCapitals() {
             iconAnchor: [12, 12]
           })
         });
-      },
-      onEachFeature: (feature, l) => {
-        if (feature.capital) {
-          l.bindPopup('<strong>' + escapeHTML(feature.capital) + '</strong><br>' + escapeHTML(feature.country || ''));
-        } else {
-          const name = feature.properties?.name || 'Столица';
-          const desc = feature.properties?.description || '';
-          l.bindPopup('<strong>' + escapeHTML(name) + '</strong>' + (desc ? '<br>' + escapeHTML(desc) : ''));
-        }
+        
+        // Добавляем всплывающее окно
+        marker.bindPopup('<strong>' + escapeHTML(item.capital || 'Столица') + '</strong><br>' + escapeHTML(item.country || ''));
+        
+        layer.addLayer(marker);
       }
-    });
+    }
     
     if (layer.getLayers().length) {
       capitalsLayer.addLayer(layer);
@@ -104,6 +97,39 @@ async function loadCapitals() {
     renderLayers();
   } catch (error) {
     console.warn('Не удалось загрузить столицы:', error.message);
+  }
+}
+
+// --- СЛОИ: ГРАНИЦЫ ГОСУДАРСТВ ---
+const bordersLayer = L.featureGroup();
+let bordersVisible = false, bordersCount = 0;
+
+async function loadBorders() {
+  try {
+    const response = await fetch('./data/countries.geojson', { cache: 'no-cache' });
+    if (!response.ok) throw Error('файл не найден (' + response.status + ')');
+    const data = await response.json();
+    
+    const layer = L.geoJSON(data, {
+      style: {
+        color: '#3a5663',
+        weight: 1.5,
+        fillColor: '#a8b8c0',
+        fillOpacity: 0.2
+      },
+      onEachFeature: (feature, l) => {
+        const name = feature.properties?.name || feature.properties?.ADMIN || 'Государство';
+        l.bindPopup('<strong>' + escapeHTML(name) + '</strong>');
+      }
+    });
+    
+    if (layer.getLayers().length) {
+      bordersLayer.addLayer(layer);
+      bordersCount = layer.getLayers().length;
+    }
+    renderLayers();
+  } catch (error) {
+    console.warn('Не удалось загрузить границы государств:', error.message);
   }
 }
 
@@ -142,6 +168,17 @@ function renderLayers(){
  const capName=document.createElement('b');capName.textContent='Столицы';
  const capCount=document.createElement('small');capCount.textContent=capitalsCount;
  capRow.append(capCheck,capDot,capName,capCount);holder.append(capRow);
+
+ // Слой границ государств
+ if (bordersCount > 0) {
+   const borderRow=document.createElement('label');borderRow.className='layer-row';
+   const borderCheck=document.createElement('input');borderCheck.type='checkbox';borderCheck.checked=bordersVisible;
+   borderCheck.onchange=()=>{bordersVisible=borderCheck.checked;if(bordersVisible)bordersLayer.addTo(map);else map.removeLayer(bordersLayer)};
+   const borderDot=document.createElement('i');borderDot.className='layer-dot';borderDot.style.background='#3a5663';
+   const borderName=document.createElement('b');borderName.textContent='Границы государств';
+   const borderCount=document.createElement('small');borderCount.textContent=bordersCount;
+   borderRow.append(borderCheck,borderDot,borderName,borderCount);holder.append(borderRow);
+ }
 }
 
 function collection(){return {type:'FeatureCollection',features:[...records.values()].map(r=>{const f=r.layer.toGeoJSON();f.properties={id:r.id,name:r.name,description:r.description,kind:r.kind,category:r.category};return f})}}
@@ -158,11 +195,11 @@ $('basemap').onchange=e=>{Object.values(tile).forEach(t=>map.removeLayer(t));til
 function load(data){let count=0;L.geoJSON(data,{pointToLayer:(f,ll)=>L.marker(ll),onEachFeature:(f,l)=>{if(!['Point','LineString','MultiLineString'].includes(f.geometry?.type))return;if(l instanceof L.LayerGroup){l.eachLayer(x=>{add(x,f.properties||{});count++})}else{add(l,f.properties||{});count++}}});return count}
 function gpx(src,filename){const doc=new DOMParser().parseFromString(src,'application/xml');if(doc.querySelector('parsererror'))throw Error('Неверный GPX');const find=(root,tag)=>Array.from(root.getElementsByTagNameNS('*',tag)),features=[];for(const w of find(doc,'wpt')){const c=[Number(w.getAttribute('lon')),Number(w.getAttribute('lat'))];if(c.every(Number.isFinite))features.push({type:'Feature',geometry:{type:'Point',coordinates:c},properties:{name:find(w,'name')[0]?.textContent||'Точка GPX',category:'tracks'}})}for(const seg of [...find(doc,'trkseg'),...find(doc,'rte')]){const coords=find(seg,seg.localName==='rte'?'rtept':'trkpt').map(p=>[Number(p.getAttribute('lon')),Number(p.getAttribute('lat'))]).filter(c=>c.every(Number.isFinite));if(coords.length>1)features.push({type:'Feature',geometry:{type:'LineString',coordinates:coords},properties:{name:filename.replace(/\.gpx$/i,''),kind:'route',category:'tracks'}})}return {type:'FeatureCollection',features}}
 $('import').onclick=()=>$('files').click();$('files').onchange=async e=>{let total=0;for(const f of e.target.files){try{const text=await f.text();total+=load(f.name.toLowerCase().endsWith('.gpx')?gpx(text,f.name):JSON.parse(text))}catch(err){alert('Ошибка '+f.name+': '+err.message)}}save();if(total)fit();$('status').textContent='Загружено объектов: '+total;e.target.value=''};
-function fit(){const all=L.featureGroup([...records.values()].map(r=>r.layer));if(waterCount)all.addLayer(waterLayer);if(capitalsCount)all.addLayer(capitalsLayer);if(records.size||waterCount||capitalsCount)map.fitBounds(all.getBounds().pad(.15),{maxZoom:14});else $('status').textContent='Объектов пока нет'}$('fit').onclick=fit;
+function fit(){const all=L.featureGroup([...records.values()].map(r=>r.layer));if(waterCount)all.addLayer(waterLayer);if(capitalsCount)all.addLayer(capitalsLayer);if(bordersCount)all.addLayer(bordersLayer);if(records.size||waterCount||capitalsCount||bordersCount)map.fitBounds(all.getBounds().pad(.15),{maxZoom:14});else $('status').textContent='Объектов пока нет'}$('fit').onclick=fit;
 $('export').onclick=()=>{const blob=new Blob([JSON.stringify(collection(),null,2)],{type:'application/geo+json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='my-map.geojson';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
 $('clear').onclick=()=>{if(records.size&&confirm('Удалить все объекты? Сначала рекомендуем скачать GeoJSON.')){records.clear();group.clearLayers();save()}};
 $('menu').onclick=()=>$('panel').classList.toggle('open');
 try{const stored=localStorage.getItem('my-atlas-v1');if(stored)load(JSON.parse(stored));else fetch('./data/map.geojson').then(r=>r.ok?r.json():null).then(data=>{if(data&&!records.size){load(data);save();fit()}}).catch(()=>{});}catch(e){console.warn(e)};
-render();loadLakes();loadCapitals();
+render();loadLakes();loadCapitals();loadBorders();
 })();
 </script></body></html>
